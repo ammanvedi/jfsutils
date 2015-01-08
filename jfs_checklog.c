@@ -8,109 +8,105 @@
 /*
     remove a file from any directory
 */
-int check_log(jfs_t *jfs, struct disk_image *dimg)
+int check_log(jfs_t *jfs)
 {
   struct inode lognode;
   int rootinode = find_root_directory(jfs);
+  //find the inode number of .log
   int loginodenum  = findfile_recursive(jfs, ".log", rootinode, DT_FILE);
-
+  //retrieve the inode corresponding to the .log file
   get_inode(jfs, loginodenum, &lognode);
-
   int blockcount;
-
-  //each block is 512 bytes (512 characters)
-  //logfile is stored in 14 blocks
-  //can read entire log into char[512*INODE_BLOCK_PTRS]
-
-  char logdata[(BLOCKSIZE*INODE_BLOCK_PTRS)+1];
   char tmplog[BLOCKSIZE];
-  printf("created logfile buffer of size %d\n", (BLOCKSIZE*INODE_BLOCK_PTRS)+1);
   struct commit_block* cb;
 
   int datablockcount = 0;
-  int blockstorestoreto=0;
-  int foundcommitat =0;
+  int blockstorestoreto = 0;
+  int foundcommitat = -1;
 
+  //iterate through each block of the logfile
   for(blockcount = 0; blockcount < INODE_BLOCK_PTRS; blockcount++)
   {
-    printf("\n\nlogfile part resides in block %d\n", lognode.blockptrs[blockcount]);
-    printf("reading block of logfile into buffer with an offset from buffer head of %d\n",blockcount*512);
-    printf("real memory location of %d\n", ( (logdata + blockcount*512) ));
-    //jfs_read_block(jfs, ( (logdata + blockcount*512) ), lognode.blockptrs[blockcount]);
+    //read block from logfile
     jfs_read_block(jfs, &tmplog, lognode.blockptrs[blockcount]);
-    //try and find a commit block
+    //try and cast memory to commit block structure
     cb = (struct commit_block*)tmplog;
-    printf("attempted cast to block to commit block, will check for magic number\n");
-    if(cb->magicnum == 0x89abcdef)
+    //if magic number can be read from data we can be sure this is a
+    //commit block
+    if((cb->magicnum == 0x89abcdef) && (cb->uncommitted == 1))
     {
-      printf("FOUND THE COMMIT BLOCK at POSITION %d, here is its data \n", blockcount);
+      printf("jfs_checklog:INFO --> found commit block with uncommitted changes, will attempt restore \n");
+      //discovered the commit block
+      //save the index position in order to reference the block number later
       foundcommitat=blockcount;
-      printf("--> magicnum is : %d\n", cb->magicnum);
-      printf("--> uncommitted val is : %d\n", cb->uncommitted);
       int c;
-      printf("--> preceeding buffered blocks should be committed to memory at\n");
       int sanity=0;
+      //count number of blocks that will need to be written
+      //ommitting blocknums of -1
       for(c = 0; c < INODE_BLOCK_PTRS; c++)
       {
         if(cb->blocknums[c] != -1)
         {
           blockstorestoreto++;
-          printf("----> block %d\n", cb->blocknums[c]);
           sanity+=cb->blocknums[c];
         }
 
       }
-      printf("--> the checksum of the blocks is %d\n", cb->sum);
-      if(sanity == cb->sum)
+
+      if((sanity == cb->sum) )
       {
-        printf("--> the checksum is valid\n");
+        //checksum is valid
+        printf("jfs_checklog:INFO --> checksum from commit_block is valid \n");
+        if(blockstorestoreto == datablockcount)
+        {
+          //number of data blocks discovered in logfile matches
+          //number of destination blocks in commit_block
+          int l;
+          int restorepos=0;
+          printf("jfs_checklog:INFO --> writing uncommitted changes to disk\n");
+          for(l=(foundcommitat-datablockcount); l < datablockcount; l++)
+          {
+            char datatorestore[BLOCKSIZE];
+            jfs_read_block(jfs, &datatorestore, lognode.blockptrs[l]);
+            // a jfs write would cause more data to be written to the log
+            //fs write is what jfscommit uses to write to disk and will prevent
+            //writing again to logfile
+            write_block(jfs->d_img, datatorestore, cb->blocknums[restorepos]);
+            restorepos++;
+
+          }
+          //finished restoring data
+          break;
+        }else
+        {
+          //commit_block and number of data blocks discovered do not
+          //agree
+          printf("jfs_checklog:ERROR --> commit block and discovered blocks do not match\n");
+          exit(1);
+        }
+
       }else
       {
-        printf("the checksum is invalid");
+        //checksum in invalid
+        printf("jfs_checklog:ERROR --> checksum is invalid\n");
+        exit(1);
       }
-      printf("in order to restore previous data will need to iterate through log from %d to %d\n", (blockcount-datablockcount),blockcount);
-      printf("counted %d data blocks, commit block has %d destination blocks\n", datablockcount, blockstorestoreto);
-
-      printf("\n");
-      int l;
-      int restorepos=0;
-      for(l=(foundcommitat-datablockcount); l < datablockcount; l++)
-      {
-        char datatorestore[BLOCKSIZE];
-        jfs_read_block(jfs, &datatorestore, lognode.blockptrs[l]);
-        printf("data contained in log block %d will be restored to disk block %d\n", lognode.blockptrs[l], cb->blocknums[restorepos]);
-        printf("\n--------------data in block (to restore)----------------\n");
-        printf("%s\n", datatorestore);
-        printf("--------------end data in block----------------\n\n");
-        // a jfs write would cause more data to be written to the log
-        //fs write is what jfscommit uses to write to disk and will prevent
-        //writing again to logfile
-        //use write_block from fs_disk
-        write_block(dimg, datatorestore, cb->blocknums[restorepos]);
-        printf("FS WRITE PERFORMED\n");
-        restorepos++;
-
-      }
-
-    
 
     }else
     {
+      //keep a count of non commit blocks encountered before commit block
       datablockcount++;
-      printf("THIS IS A DATA BLOCK :: #%d\n", datablockcount);
-      //printf("\n--------------data in block----------------\n");
-      //printf("attempting to print partial log \n%s\n\n\n\n", tmplog);
-      //sprintf("--------------end data in block----------------\n\n");
     }
 
   }
 
-  //null terminate string
-  logdata[(blockcount*512)+1] = '\0';
-  printf("null terminating logfile at position %d\n", (blockcount*512)+1);
-  printf("printing the contents of the log file::\n");
-  printf("\n");
-  printf("%s\n", logdata);
+  if(foundcommitat == -1)
+  {
+    //no commit block was found in the logfile
+    printf("jfs_checklog:ERROR --> no commit block was found in the logfile, cannot repair writes\n");
+    exit(1);
+  }
+
 
 }
 
@@ -120,7 +116,7 @@ int main(int argc, char **argv)
   jfs_t *jfs;
   di = mount_disk_image(argv[1]);
   jfs = init_jfs(di);
-  check_log(jfs, di);
+  check_log(jfs);
   unmount_disk_image(di);
   exit(0);
 }
