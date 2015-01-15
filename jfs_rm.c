@@ -10,7 +10,7 @@
     Remove a file from any directory
     
 */
-int remove_file(jfs_t *jfs, char *pname, char *fname)
+void remove_file(jfs_t *jfs, char *pname, char *fname)
 {
     int rootinode = find_root_directory(jfs);
     struct inode in;
@@ -146,11 +146,25 @@ int remove_file(jfs_t *jfs, char *pname, char *fname)
           exit(1);
         }
 
-        return 0;
+        
 }
+
+void showusage()
+{
+  fprintf(stderr, "Usage: jfs_rm <volumename> <path> <file to delete>\n");
+  exit(1);
+}
+
 
 int main(int argc, char **argv)
 {
+
+    
+    if(argc < 4)
+    {
+        showusage();
+    }
+    
     struct disk_image *di;
     jfs_t *jfs;
     di = mount_disk_image(argv[1]);

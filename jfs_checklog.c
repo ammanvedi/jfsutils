@@ -8,7 +8,7 @@
 /*
     remove a file from any directory
 */
-int check_log(jfs_t *jfs)
+void check_log(jfs_t *jfs)
 {
   struct inode lognode;
   int rootinode = find_root_directory(jfs);
@@ -28,7 +28,7 @@ int check_log(jfs_t *jfs)
   for(blockcount = 0; blockcount < INODE_BLOCK_PTRS; blockcount++)
   {
     //read block from logfile
-    jfs_read_block(jfs, &tmplog, lognode.blockptrs[blockcount]);
+    jfs_read_block(jfs, tmplog, lognode.blockptrs[blockcount]);
     //try and cast memory to commit block structure
     cb = (struct commit_block*)tmplog;
     //if magic number can be read from data we can be sure this is a
@@ -53,7 +53,7 @@ int check_log(jfs_t *jfs)
 
       }
 
-      if((sanity == cb->sum) )
+      if(sanity == cb->sum )
       {
         //checksum is valid
         printf("jfs_checklog:INFO --> checksum from commit_block is valid \n");
@@ -67,7 +67,7 @@ int check_log(jfs_t *jfs)
           for(l=(foundcommitat-datablockcount); l < datablockcount; l++)
           {
             char datatorestore[BLOCKSIZE];
-            jfs_read_block(jfs, &datatorestore, lognode.blockptrs[l]);
+            jfs_read_block(jfs, datatorestore, lognode.blockptrs[l]);
             // a jfs write would cause more data to be written to the log
             //fs write is what jfscommit uses to write to disk and will prevent
             //writing again to logfile
@@ -115,11 +115,23 @@ int check_log(jfs_t *jfs)
     exit(1);
   }
 
-return 0;
+
+}
+
+void showusage()
+{
+  fprintf(stderr, "Usage: jfs_checlog <volumename>\n");
+  exit(1);
 }
 
 int main(int argc, char **argv)
 {
+    
+   if(argc < 2)
+   {
+        showusage();
+   }
+    
   struct disk_image *di;
   jfs_t *jfs;
   di = mount_disk_image(argv[1]);
