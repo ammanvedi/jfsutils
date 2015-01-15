@@ -1,0 +1,36 @@
+jfs_rm.c  - Removal of a File From a Directory
+
+The removal algorithm i have implemented is contained within the remove_file function, which has the signature;
+
+int remove_file( jfs_t *jfs, char *pname, char *fname )
+
+The function takes pointers to the file system struct, the pathname character array and the filename character array. The latter are both passed from command line arguments to the function. The file system is passed after being loaded with the mount_disk_image()  function. 
+	The function initially locates the iNode number of the directory requested through the *pname (pathname) argument, if it is successful in locating the iNode number get_iNode() is used to retrieve the structure. The following section of code uses the definition outlined in the coursework outline; 
+
+" A directory consists of a single block with multiple directory entries in it "
+
+The first block from the iNode is read into a buffer, this buffer contains the directory entries that are present in the *pname folder, this buffer is casted to a pointer to a directory entry so that it can be interpreted as such. 
+	The next step of the algorithm enters an infinite while loop, this loop is broken by comparing the sum of the number of bytes read after each iteration with the size of the directory listing that is obtained from the iNode relating to *pname, the loop will conclude when the number of bytes read is equal to (or greater than) the directories size. On each iteration of the While(1) loop, the filename is read into a buffer and null terminated so it can be used for comparisons later. 
+	Each iteration of the loop will then examine the file_type property of the directory entry struct. If the entry is describing a directory entry (DT_DIRECTORY), then it's bytes are copied into a new buffer " editedblock " the algorithm also keeps track of the next free position of this buffer (endofeditedblock) using the directory entry's entry_len property, in order to prevent overwriting previously written data. 
+	The other case is that the directory entry struct is defining a file (DT_FILE), this is the more interesting case. A comparison is made between the (newly null terminated) filename and the *fname argument, if a match is not found then as in the case for directory entries, the bytes are copied to the new " editedblock " buffer. If a match is found then the entry describes the information relating to the file the user desires to remove. In this case the directory entry's iNode property is used to retrieve the file's iNode. All non-zero blocks used by the iNode are then returned to the filesystem block free-list, as is the iNode itself. Its bytes are not copied into " editedblock ".
+	As an entry has been removed from the directory entries relating to *pname, its directory length has also changed, this is amended to ensure integrity, before its is written to the cache with a jfs_write_block().
+	Upon termination of the while loop, the buffer " editedblock " contains a representation of the directory entry block without the entry that needed to be removed. this is then used in a jfs_write_block() and overwrites the data previously stored in position 0 of the iNode pertaining to *pname.
+	A final jfs_commit() is called to write all the changes to disk.
+
+ 
+
+jfs_checklog.c  - Repairing an Inconsistent Filesystem With the LogFile
+
+The algorithm for checking the log file and repairing any inconsistencies has the function signature;  
+
+int check_log( jfs_t *jfs )
+
+it takes a sole argument which is a pointer to the struct that defines the filesystem. The log-file has a known location, in the root directory with the filename of " .log ". The iNode relating to the log-file is retrieved using this information and a call to findfile_recursive() followed by get_inode().
+	According to the coursework definition the log-file will contain data blocks that are destined for the disk followed by a commit block containing information about the blocks to be written. The initial step of the function is to use the block pointers stored in the log-file iNode to loop through the contents of the log. At each iteration the block that is pointed to is read into a buffer, this buffer is then cast into a commit_block structure, if the read block is a commit block then its should have a magicnum property that can be resolved to the hexadecimal " 0x89abcdef ". 
+	If the magicnum property is not satisfied then a counter variable is incremented (" datablockcount ") to indicate a block containing data destined for disk was read, this will be used in verification of the commit block if it is found.
+	If the property is satisfied, and the commit_block is uncommitted (according to its " uncommitted " property) then a repair will be attempted. The first stage of an attempted repair is to verify that the checksum is correct, by calculating the sum of the block numbers within the blockdata array. A successful comparison will initiate a second comparison between the number of blocks read prior to finding the commit block, and the number of data blocks that are indicated within the blockdata array. 
+	The success of these two checks leads on to the prior blocks being written to disk using the write_block() function, this function is used as opposed to jfs_write_block() as it does not write to the log-file, instead it writes to the disk image. After the blocks are written, the log-file entry containing the commit block is no longer necessary, further to this, if it was to remain it would cause the routine to attempt the same fix already performed on the filesystem. Its block pointers are expunged and the uncommitted flag is switched to 0. These changes ensure that it is not recognised as a valid commit block by the routine.
+
+Included Tests
+
+The shell scripts testcommand.sh and testchecklog.sh are included and provide a run of each implemented routine. The former is used to test jfs_rm.c and the latter jfs_checklog.c.
