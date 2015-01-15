@@ -23,9 +23,9 @@ int remove_file(jfs_t *jfs, char *pname, char *fname)
         //no further lookup is needed 
         resultdir = rootinode;
     }else{
-        
-        resultdir  = findfile_recursive(jfs, pname, rootinode, DT_DIRECTORY);        
-        
+        char pathbuf[strlen(pname)];
+        last_part(pname, &pathbuf);
+        resultdir  = findfile_recursive(jfs, pathbuf, rootinode, DT_DIRECTORY);        
     }
 
     if(resultdir == -1)
@@ -33,7 +33,6 @@ int remove_file(jfs_t *jfs, char *pname, char *fname)
       printf("jfs_rm:ERROR --> directory not found\n");
       exit(1);
     }
-
 
     get_inode(jfs, resultdir, &in);
     int dir_size = in.size;

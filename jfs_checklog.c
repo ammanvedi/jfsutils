@@ -76,6 +76,14 @@ int check_log(jfs_t *jfs)
 
           }
           //finished restoring data
+          //commit block is found at position " foundcommitat " in logfile
+          //clear the lognode
+            int i;
+          for (i = 0; i < INODE_BLOCK_PTRS; i++)
+              cb->blocknums[i] = -1;
+	       cb->sum = 0;
+	       cb->uncommitted = 0;
+	       write_block(jfs->d_img, tmplog,lognode.blockptrs[foundcommitat]);
           break;
         }else
         {
