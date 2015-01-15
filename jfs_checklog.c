@@ -107,7 +107,7 @@ int check_log(jfs_t *jfs)
     exit(1);
   }
 
-
+return 0;
 }
 
 int main(int argc, char **argv)

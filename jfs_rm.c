@@ -7,14 +7,26 @@
 
 
 /*
-    remove a file from any directory
+    Remove a file from any directory
+    
 */
 int remove_file(jfs_t *jfs, char *pname, char *fname)
 {
     int rootinode = find_root_directory(jfs);
     struct inode in;
     int bytes = 0, foundfile = 0;
-    int resultdir  = findfile_recursive(jfs, pname, rootinode, DT_DIRECTORY);
+    int resultdir;
+    
+    if(strcmp(pname, "/") == 0)
+    {
+        //the suser is requesting the root directory in which case
+        //no further lookup is needed 
+        resultdir = rootinode;
+    }else{
+        
+        resultdir  = findfile_recursive(jfs, pname, rootinode, DT_DIRECTORY);        
+        
+    }
 
     if(resultdir == -1)
     {
